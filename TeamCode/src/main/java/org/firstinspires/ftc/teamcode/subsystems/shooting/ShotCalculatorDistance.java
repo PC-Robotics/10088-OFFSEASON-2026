@@ -3,8 +3,13 @@ package org.firstinspires.ftc.teamcode.subsystems.shooting;
 import static org.firstinspires.ftc.teamcode.Utility.lerp;
 import static org.firstinspires.ftc.teamcode.Utility.polarTo;
 
+import com.opencsv.CSVReaderHeaderAware;
+import com.opencsv.exceptions.CsvValidationException;
+
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -19,6 +24,13 @@ public class ShotCalculatorDistance implements ShotCalculator {
 
     public ShotCalculatorDistance() {}
 
+
+    @Override
+    public void init() {
+        reset();
+        clearShotPoints();
+        loadFromCSV("shotTable.csv", "distance_inches", "rpm");
+    }
     @Override
     public void reset() {
         robotPose = null;
@@ -79,5 +91,35 @@ public class ShotCalculatorDistance implements ShotCalculator {
 
     public void clearShotPoints() {
         distanceToRPM.clear();
+    }
+
+    public int loadFromCSV(String fileName, String keyHeader, String valueHeader) {
+        int linesLoaded = 0;
+        try (CSVReaderHeaderAware reader = new CSVReaderHeaderAware(new FileReader(fileName))) {
+            Map<String, String> row;
+            String k, v;
+            while ((row = reader.readMap()) != null) { // 2 in 1
+                k = row.get(keyHeader);
+                v = row.get(valueHeader);
+                if (k == null || v == null || k.startsWith("#")) {
+                    continue; // if missing column or comment, skip
+                }
+                k = k.trim();
+                v = v.trim();
+                if (k.isEmpty() || v.isEmpty()) {
+                    continue; // if blank row, skip
+                }
+                try {
+                    addShotPoint(Double.parseDouble(k), Double.parseDouble(v));
+                    linesLoaded++;
+                } catch (NumberFormatException e) {
+                    // if messed up row, skip
+                }
+            }
+        } catch (IOException | CsvValidationException e) {
+            return -1;
+        }
+
+        return linesLoaded;
     }
 }

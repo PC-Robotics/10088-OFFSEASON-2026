@@ -3,6 +3,8 @@ package org.firstinspires.ftc.teamcode.subsystems.shooting;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 
 public interface ShotCalculator {
+    void init();
+
     ShotSolution run();
 
     void reset();

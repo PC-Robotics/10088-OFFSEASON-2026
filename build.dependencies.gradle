@@ -18,5 +18,7 @@ dependencies {
     implementation 'com.pedropathing:ftc:2.1.1'
     implementation 'com.pedropathing:telemetry:1.0.0'
     implementation 'com.bylazar:fullpanels:1.0.12'
+    // Source: https://mvnrepository.com/artifact/com.opencsv/opencsv
+    implementation 'com.opencsv:opencsv:5.12.0'
 }
 

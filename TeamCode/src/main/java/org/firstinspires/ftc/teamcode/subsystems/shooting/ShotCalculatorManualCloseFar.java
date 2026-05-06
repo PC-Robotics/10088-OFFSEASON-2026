@@ -53,6 +53,11 @@ public class ShotCalculatorManualCloseFar implements ShotCalculator {
     }
 
     @Override
+    public void init() {
+        reset();
+    }
+
+    @Override
     public void reset() {
         robotPose = null;
         goalPose = null;
