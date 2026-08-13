@@ -33,6 +33,8 @@ public class Intake implements Subsystem {
     private State desiredState = State.STOPPED;
     // actual subsystem state
     private State state = State.STOPPED;
+    // used for transition detection
+    private State previousState = State.STOPPED;
 
     private double commandedPower = 0.0;
 
@@ -46,7 +48,8 @@ public class Intake implements Subsystem {
     private double jamCurrentThreshold = 5.0; // amps
     private double jamVelocityThreshold = 50.0; // rpm
     private double jamTimeThreshold = 250.0; // ms
-    private double jamMinPower = 0.4; // minimum motor power
+    private double jamMinPower = 0.4; // in [0, 1]
+    private double jamSpinUpDelay = 500.0; // ms
 
     // jam clearing
     private double jamClearDuration = 250.0; // ms
@@ -57,6 +60,7 @@ public class Intake implements Subsystem {
 
     private final ElapsedTime jamTimer = new ElapsedTime();
     private final ElapsedTime jamClearTimer = new ElapsedTime();
+    private final ElapsedTime intakeRunTimer = new ElapsedTime();
 
     // item detection
     private DistanceSensor distanceSensor;
@@ -88,6 +92,7 @@ public class Intake implements Subsystem {
 
         desiredState = State.STOPPED;
         state = State.STOPPED;
+        previousState = State.STOPPED;
         commandedPower = 0.0;
 
         autoJamClearingEnabled = true;
@@ -96,6 +101,7 @@ public class Intake implements Subsystem {
         jammed = false;
         jamTimer.reset();
         jamClearTimer.reset();
+        intakeRunTimer.reset();
 
         hasItem = false;
         itemCandidate = false;
@@ -109,11 +115,15 @@ public class Intake implements Subsystem {
         detectJam();
         detectItem();
 
-        if (state == State.JAM_CLEARING) {
-            if (jamClearTimer.milliseconds() >= jamClearDuration) {
-                state = desiredState;
-            }
-        } else {
+        // before any state changing code
+        previousState = state;
+
+        boolean clear =
+                state == State.JAM_CLEARING
+                && desiredState == State.INTAKING // if user switches intent then change
+                && jamClearTimer.milliseconds() < jamClearDuration;
+
+        if (!clear) {
             state = desiredState;
 
             if (autoJamClearingEnabled && state == State.INTAKING && jammed) {
@@ -129,6 +139,9 @@ public class Intake implements Subsystem {
                 commandedPower = -holdingPower;
                 break;
             case INTAKING:
+                if (previousState != State.INTAKING) {
+                    intakeRunTimer.reset();
+                }
                 commandedPower = intakingPower;
                 break;
             case OUTTAKING:
@@ -152,6 +165,7 @@ public class Intake implements Subsystem {
     private void detectJam() {
         boolean sus =
                 state == State.INTAKING
+                && intakeRunTimer.milliseconds() >= jamSpinUpDelay
                 && Math.abs(motor.getPower()) >= jamMinPower
                 && motor.getCurrent(CurrentUnit.AMPS) >= jamCurrentThreshold
                 && getMotorVelocityRPM(motor) <= jamVelocityThreshold;
@@ -219,6 +233,7 @@ public class Intake implements Subsystem {
     public void stop() {
         desiredState = State.STOPPED;
         state = State.STOPPED;
+        previousState = State.STOPPED;
         commandedPower = 0.0;
         motor.setPower(0.0);
 
@@ -228,6 +243,7 @@ public class Intake implements Subsystem {
         jammed = false;
         jamTimer.reset();
         jamClearTimer.reset();
+        intakeRunTimer.reset();
 
         hasItem = false;
         itemCandidate = false;
@@ -273,7 +289,9 @@ public class Intake implements Subsystem {
                 "Jam Clear Timer (ms): " + String.format(Locale.US, "%.1f", jamClearTimer.milliseconds()),
                 "Jam Current Threshold: " + String.format(Locale.US, "%.2f", jamCurrentThreshold),
                 "Jam Velocity Threshold (RPM): " + String.format(Locale.US, "%.2f", jamVelocityThreshold),
-                "Jam Time Threshold (ms): " + String.format(Locale.US, "%.1f", jamTimeThreshold)
+                "Jam Time Threshold (ms): " + String.format(Locale.US, "%.1f", jamTimeThreshold),
+                "Jam Spin-Up Delay (ms): " + String.format(Locale.US, "%.1f", jamSpinUpDelay),
+                "Intake Run Timer (ms): " + String.format(Locale.US, "%.1f", intakeRunTimer.milliseconds())
         );
     }
 
