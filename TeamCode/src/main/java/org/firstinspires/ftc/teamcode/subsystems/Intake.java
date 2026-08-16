@@ -16,6 +16,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import java.util.List;
 import java.util.Locale;
 
+// TODO - remove "JAM_CLEARING" as a state or make it a sub of INTAKING. desiredState should never be JAM_CLEARING. Driver should be able to cancel the clear before it ends.
 @Configurable
 public class Intake implements Subsystem {
     public enum State {
