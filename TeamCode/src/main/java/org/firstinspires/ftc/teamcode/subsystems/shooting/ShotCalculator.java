@@ -3,17 +3,17 @@ package org.firstinspires.ftc.teamcode.subsystems.shooting;
 import com.pedropathing.geometry.Pose;
 
 public interface ShotCalculator {
-    void init();
+	void init();
 
-    ShotSolution run();
+	ShotSolution run();
 
-    void reset();
+	void reset();
 
-    void updateRobotPose(Pose robotPose);
+	void updateRobotPose(Pose robotPose);
 
-    void updateGoalPose(Pose goalPose);
+	void updateGoalPose(Pose goalPose);
 
-    default void updateRobotVelocity(double vx, double vy, double omega) {
-        // optional
-    }
+	default void updateRobotVelocity(double vx, double vy, double omega) {
+		// optional
+	}
 }
