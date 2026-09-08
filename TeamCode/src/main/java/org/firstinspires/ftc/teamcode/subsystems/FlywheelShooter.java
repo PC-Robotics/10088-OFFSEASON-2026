@@ -19,9 +19,10 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.ServoImplEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
-import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
+import com.pedropathing.geometry.Pose;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculator;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculatorDistance;
+import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculatorMode;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculatorManualCloseFar;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculatorProportional;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotSolution;
@@ -40,12 +41,6 @@ public class FlywheelShooter {
     public enum SpinPosition {
         CLOSE,
         FAR
-    }
-
-    public enum ShotCalculatorMode {
-        MANUAL_CLOSE_FAR,
-        DISTANCE,
-        PROPORTIONAL
     }
 
     public enum LedColor {
@@ -96,8 +91,8 @@ public class FlywheelShooter {
     private LedColor commandedLedColor = LedColor.OFF;
 
     // location tracking
-    private Pose2D robotPose;
-    private Pose2D goalPose;
+    private Pose robotPose;
+    private Pose goalPose;
     private ShotSolution currentShotSolution = new ShotSolution(0.0, 0.0, 0.0, false);
 
     // pid stuff
@@ -147,7 +142,7 @@ public class FlywheelShooter {
     // new schedule interrupts running command
 
 
-    // runs both motorss with a pidf controller to match the given target rpm set by selected shot solution
+    // runs both motors with a pidf controller to match the given target rpm set by selected shot solution
     public Command spin() {
         return Command.build()
                 .setStart(() -> { // only runs on first loop (basically the reset)
@@ -387,11 +382,11 @@ public class FlywheelShooter {
         return currentShotSolution;
     }
 
-    public void updateRobotPose(Pose2D robotPose) {
+    public void updateRobotPose(Pose robotPose) {
         this.robotPose = robotPose;
     }
 
-    public void updateGoalPose(Pose2D goalPose) {
+    public void updateGoalPose(Pose goalPose) {
         this.goalPose = goalPose;
     }
 
