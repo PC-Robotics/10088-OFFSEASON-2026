@@ -6,7 +6,7 @@ import static org.firstinspires.ftc.teamcode.Utility.polarTo;
 import com.opencsv.CSVReaderHeaderAware;
 import com.opencsv.exceptions.CsvValidationException;
 
-import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
+import com.pedropathing.geometry.Pose;
 
 import java.io.FileReader;
 import java.io.IOException;
@@ -19,8 +19,8 @@ public class ShotCalculatorDistance implements ShotCalculator {
     private final double minDistance = 0;
     private final double maxDistance = 100;
 
-    private Pose2D robotPose;
-    private Pose2D goalPose;
+    private Pose robotPose;
+    private Pose goalPose;
 
     public ShotCalculatorDistance() {}
 
@@ -38,12 +38,12 @@ public class ShotCalculatorDistance implements ShotCalculator {
     }
 
     @Override
-    public void updateRobotPose(Pose2D robotPose) {
+    public void updateRobotPose(Pose robotPose) {
         this.robotPose = robotPose;
     }
 
     @Override
-    public void updateGoalPose(Pose2D goalPose) {
+    public void updateGoalPose(Pose goalPose) {
         this.goalPose = goalPose;
     }
 

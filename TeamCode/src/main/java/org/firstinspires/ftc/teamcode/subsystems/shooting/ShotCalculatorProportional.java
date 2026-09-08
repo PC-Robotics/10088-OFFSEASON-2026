@@ -3,7 +3,7 @@ package org.firstinspires.ftc.teamcode.subsystems.shooting;
 import static org.firstinspires.ftc.teamcode.Utility.clamp;
 import static org.firstinspires.ftc.teamcode.Utility.polarTo;
 
-import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
+import com.pedropathing.geometry.Pose;
 
 
 /**
@@ -22,8 +22,8 @@ import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 public class ShotCalculatorProportional implements ShotCalculator {
     private static final double GRAVITY = 315.30567; // g (9.8m/s^2) converted to in/s^2
 
-    private Pose2D robotPose;
-    private Pose2D goalPose;
+    private Pose robotPose;
+    private Pose goalPose;
     
     private double launchAngleDegrees = 45.0;
 
@@ -85,12 +85,12 @@ public class ShotCalculatorProportional implements ShotCalculator {
     }
 
     @Override
-    public void updateRobotPose(Pose2D robotPose) {
+    public void updateRobotPose(Pose robotPose) {
         this.robotPose = robotPose;
     }
 
     @Override
-    public void updateGoalPose(Pose2D goalPose) {
+    public void updateGoalPose(Pose goalPose) {
         this.goalPose = goalPose;
     }
 

@@ -2,7 +2,7 @@ package org.firstinspires.ftc.teamcode.subsystems.shooting;
 
 import static org.firstinspires.ftc.teamcode.Utility.polarTo;
 
-import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
+import com.pedropathing.geometry.Pose;
 
 public class ShotCalculatorManualCloseFar implements ShotCalculator {
     public enum ShotPreset {
@@ -27,8 +27,8 @@ public class ShotCalculatorManualCloseFar implements ShotCalculator {
         }
     }
 
-    private Pose2D robotPose;
-    private Pose2D goalPose;
+    private Pose robotPose;
+    private Pose goalPose;
 
     private ShotPreset preset = ShotPreset.IDLE;
 
@@ -65,12 +65,12 @@ public class ShotCalculatorManualCloseFar implements ShotCalculator {
     }
 
     @Override
-    public void updateRobotPose(Pose2D robotPose) {
+    public void updateRobotPose(Pose robotPose) {
         this.robotPose = robotPose;
     }
 
     @Override
-    public void updateGoalPose(Pose2D goalPose) {
+    public void updateGoalPose(Pose goalPose) {
         this.goalPose = goalPose;
     }
 

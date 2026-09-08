@@ -1,10 +1,9 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
-import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 
 public final class Utility {
     private Utility() {
@@ -106,41 +105,41 @@ public final class Utility {
 
 
     /**
-     * Calculates the distance and angle from one Pose2D to another.
+     * Calculates the distance and angle from one Pose to another.
      *
-     * @param p1 the starting Pose2D
-     * @param p2 the target Pose2D
+     * @param p1 the starting Pose
+     * @param p2 the target Pose
      * @return a double array where [0] is distance in inches, [1] is angle in radians
      */
-    public static double[] polarTo(Pose2D p1, Pose2D p2) {
-        double dx = p2.getX(DistanceUnit.INCH) - p1.getX(DistanceUnit.INCH);
-        double dy = p2.getY(DistanceUnit.INCH) - p1.getY(DistanceUnit.INCH);
+    public static double[] polarTo(Pose p1, Pose p2) {
+        double dx = p2.getX() - p1.getX();
+        double dy = p2.getY() - p1.getY();
         return new double[] {Math.hypot(dx, dy), Math.atan2(dy, dx)};
     }
 
     /**
-     * Calculates the Euclidean distance between two Pose2D objects.
+     * Calculates the Euclidean distance between two Pose objects.
      *
-     * @param p1 the first Pose2D
-     * @param p2 the second Pose2D
+     * @param p1 the first Pose
+     * @param p2 the second Pose
      * @return the distance in inches
      */
-    public static double distance(Pose2D p1, Pose2D p2) {
-        double dx = p2.getX(DistanceUnit.INCH) - p1.getX(DistanceUnit.INCH);
-        double dy = p2.getY(DistanceUnit.INCH) - p1.getY(DistanceUnit.INCH);
+    public static double distance(Pose p1, Pose p2) {
+        double dx = p2.getX() - p1.getX();
+        double dy = p2.getY() - p1.getY();
         return Math.hypot(dx, dy);
     }
 
     /**
-     * Calculates the angle from one Pose2D to another.
+     * Calculates the angle from one Pose to another.
      *
-     * @param p1 the starting Pose2D
-     * @param p2 the target Pose2D
+     * @param p1 the starting Pose
+     * @param p2 the target Pose
      * @return the angle in radians
      */
-    public static double angle(Pose2D p1, Pose2D p2) {
-        double dx = p2.getX(DistanceUnit.INCH) - p1.getX(DistanceUnit.INCH);
-        double dy = p2.getY(DistanceUnit.INCH) - p1.getY(DistanceUnit.INCH);
+    public static double angle(Pose p1, Pose p2) {
+        double dx = p2.getX() - p1.getX();
+        double dy = p2.getY() - p1.getY();
         return Math.atan2(dy, dx);
     }
 }

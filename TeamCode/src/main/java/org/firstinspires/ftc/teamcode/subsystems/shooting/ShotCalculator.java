@@ -1,6 +1,6 @@
 package org.firstinspires.ftc.teamcode.subsystems.shooting;
 
-import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
+import com.pedropathing.geometry.Pose;
 
 public interface ShotCalculator {
     void init();
@@ -9,9 +9,9 @@ public interface ShotCalculator {
 
     void reset();
 
-    void updateRobotPose(Pose2D robotPose);
+    void updateRobotPose(Pose robotPose);
 
-    void updateGoalPose(Pose2D goalPose);
+    void updateGoalPose(Pose goalPose);
 
     default void updateRobotVelocity(double vx, double vy, double omega) {
         // optional
