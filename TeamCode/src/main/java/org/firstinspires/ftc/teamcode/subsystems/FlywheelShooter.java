@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 
 // not fleshed out, position stuff is being handled rn in flywheel but it will change
+// TODO - refractor this class and all ShotCalculator classes to now use Ivy
 @Configurable
 public class FlywheelShooter implements Subsystem {
     public enum State {

@@ -1,9 +1,15 @@
 package org.firstinspires.ftc.teamcode.subsystems;
 
+import static com.pedropathing.ivy.commands.Commands.conditional;
+import static com.pedropathing.ivy.commands.Commands.infinite;
+import static com.pedropathing.ivy.commands.Commands.instant;
+import static com.pedropathing.ivy.commands.Commands.waitMs;
+import static com.pedropathing.ivy.groups.Groups.race;
 import static org.firstinspires.ftc.teamcode.Utility.clamp;
 import static org.firstinspires.ftc.teamcode.Utility.getMotorVelocityRPM;
 
 import com.bylazar.configurables.annotations.Configurable;
+import com.pedropathing.ivy.Command;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -16,28 +22,22 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import java.util.List;
 import java.util.Locale;
 
-// TODO - remove "JAM_CLEARING" as a state or make it a sub of INTAKING. desiredState should never be JAM_CLEARING. Driver should be able to cancel the clear before it ends.
+
+// modular and generalized intake subsystem with jam detection and clearing, and item detection
 @Configurable
-public class Intake implements Subsystem {
+public class Intake {
     public enum State {
         STOPPED,
         HOLDING,
         INTAKING,
-        OUTTAKING,
-        JAM_CLEARING
+        OUTTAKING
     }
 
-    private final LinearOpMode opMode;
     public DcMotorEx motor;
+    private final DistanceSensor distanceSensor;
 
-    // driver intent
-    private State desiredState = State.STOPPED;
-    // actual subsystem state
+    // current mode label, set by the mode commands; used for detection gating + telemetry
     private State state = State.STOPPED;
-    // used for transition detection
-    private State previousState = State.STOPPED;
-
-    private double commandedPower = 0.0;
 
     // powers are inverted in code
     private double holdingPower = 0.05;
@@ -58,13 +58,12 @@ public class Intake implements Subsystem {
 
     private boolean jamCandidate = false;
     private boolean jammed = false;
+    private boolean clearing = false;
 
     private final ElapsedTime jamTimer = new ElapsedTime();
-    private final ElapsedTime jamClearTimer = new ElapsedTime();
     private final ElapsedTime intakeRunTimer = new ElapsedTime();
 
     // item detection
-    private DistanceSensor distanceSensor;
     private boolean hasItem = false;
     private boolean itemCandidate = false;
     private double itemDistanceThreshold = 5.0; // cm
@@ -79,100 +78,96 @@ public class Intake implements Subsystem {
     private final ElapsedTime distanceSensorPollTimer = new ElapsedTime();
 
     public Intake(LinearOpMode opMode) {
-        this.opMode = opMode;
-    }
-
-    @Override
-    public void init() {
         motor = opMode.hardwareMap.get(DcMotorEx.class, "intake");
         motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         motor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         motor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
         distanceSensor = opMode.hardwareMap.get(DistanceSensor.class, "intakeSensor");
-
-        desiredState = State.STOPPED;
-        state = State.STOPPED;
-        previousState = State.STOPPED;
-        commandedPower = 0.0;
-
-        autoJamClearingEnabled = true;
-
-        jamCandidate = false;
-        jammed = false;
-        jamTimer.reset();
-        jamClearTimer.reset();
-        intakeRunTimer.reset();
-
-        hasItem = false;
-        itemCandidate = false;
-        itemDetectionTimer.reset();
-
-        distanceSensorPollTimer.reset();
     }
 
-    @Override
-    public void update() {
-        detectJam();
-        detectItem();
+    // driver commands
+    // new schedule interrupts running command
+    public Command intake() {
+        return Command.build() // runs continuously until interrupted
+                .setStart(() -> { // only runs on first loop
+                    state = State.INTAKING; // set state
+                    intakeRunTimer.reset(); // start the intake run timer for jam detection
+                    motor.setPower(intakingPower);
+                })
+                .setDone(() -> false) // hold motor until interrupted
+                .requiring(motor);
+    }
 
-        // before any state changing code
-        previousState = state;
+    public Command stop() {
+        return instant(() -> { // only runs one loop
+            state = State.STOPPED;
+            motor.setPower(0.0);
+        }).requiring(motor);
+    }
 
-        boolean clear =
-                state == State.JAM_CLEARING
-                && desiredState == State.INTAKING // if user switches intent then change
-                && jamClearTimer.milliseconds() < jamClearDuration;
+    public Command hold() {
+        return instant(() -> { // only runs one loop
+            state = State.HOLDING;
+            motor.setPower(-holdingPower);
+        }).requiring(motor);
+    }
 
-        if (!clear) {
-            state = desiredState;
+    public Command outtake() {
+        return instant(() -> { // only runs one loop
+            state = State.OUTTAKING;
+            motor.setPower(-outtakingPower);
+        }).requiring(motor);
+    }
 
-            if (autoJamClearingEnabled && state == State.INTAKING && jammed) {
-                enterJamClearing();
+    public Command toggleIntake() {
+        return conditional(() -> state == State.INTAKING, stop(), intake());
+    }
+
+
+    /**
+     * For clearing jams. it runs reverseMotorForClear() and runs the waitMs command at the same time, and as soon as either finishes it continues with intake.
+     * If user interrupts clearJam(), end behavior is called for reverseMotorForClear() effectively stopping the command
+     */
+    public Command clearJam() {
+        return race(reverseMotorForClear(), waitMs(jamClearDuration)).then(intake());
+    }
+
+    // actually controls motor
+    private Command reverseMotorForClear() {
+        return Command.build() // continuous function
+                .setStart(() -> { // on first run
+                    clearing = true;
+                    motor.setPower(-jamClearingPower);
+                })
+                .setDone(() -> false) // hold until interrupted
+                .setEnd(endCondition -> clearing = false) // on end (OR INTERRUPT), clearing = false
+                .requiring(motor);
+    }
+
+    // runs detections
+    public Command periodic() {
+        return infinite(() -> { // runs forever
+            detectItem();
+            detectJam();
+            if (autoJamClearingEnabled && state == State.INTAKING && jammed && !clearing) { // if should clear...
+                clearJam().schedule(); // first build clearJam and then schedule it
             }
-        }
-
-        switch (state) {
-            case STOPPED:
-                commandedPower = 0.0;
-                break;
-            case HOLDING:
-                commandedPower = -holdingPower;
-                break;
-            case INTAKING:
-                if (previousState != State.INTAKING) {
-                    intakeRunTimer.reset();
-                }
-                commandedPower = intakingPower;
-                break;
-            case OUTTAKING:
-                commandedPower = -outtakingPower;
-                break;
-            case JAM_CLEARING:
-                commandedPower = -jamClearingPower;
-                break;
-        }
-
-        motor.setPower(commandedPower);
+        });
     }
 
-    private void enterJamClearing() {
-        state = State.JAM_CLEARING;
-        jamClearTimer.reset();
-        jamCandidate = false;
-        jammed = false;
-    }
-
+    // code to detect jam based on state and motor power, current, and velocity
     private void detectJam() {
-        boolean sus =
+        boolean sus = // initial flag
                 state == State.INTAKING
+                && !clearing
                 && intakeRunTimer.milliseconds() >= jamSpinUpDelay
                 && Math.abs(motor.getPower()) >= jamMinPower
                 && motor.getCurrent(CurrentUnit.AMPS) >= jamCurrentThreshold
                 && getMotorVelocityRPM(motor) <= jamVelocityThreshold;
 
         if (sus) {
-            if (!jamCandidate) {
+            if (!jamCandidate) { // edge detector (dont spam timer reset)
                 jamCandidate = true;
                 jamTimer.reset();
             }
@@ -184,8 +179,11 @@ public class Intake implements Subsystem {
         }
     }
 
+    // code to detect item based on distance sensor
     private void detectItem() {
-        double pollInterval = (desiredState == State.INTAKING || hasItem)
+        // dynamic polling because sensor reads are EXPENSIVE
+        // if robot already detects item, then poll fast. If there is no item, then poll slow.
+        double pollInterval = (state == State.INTAKING || hasItem) // if intaking and already has item
                               ? distanceSensorFastPollInterval
                               : distanceSensorSlowPollInterval;
 
@@ -194,10 +192,10 @@ public class Intake implements Subsystem {
         }
         distanceSensorPollTimer.reset();
 
-        boolean sus = distanceSensor.getDistance(DistanceUnit.CM) <= itemDistanceThreshold;
+        boolean sus = distanceSensor.getDistance(DistanceUnit.CM) <= itemDistanceThreshold; // initial flag
 
         if (sus) {
-            if (!itemCandidate) {
+            if (!itemCandidate) { // edge detector (dont spam timer reset)
                 itemCandidate = true;
                 itemDetectionTimer.reset();
             }
@@ -209,72 +207,27 @@ public class Intake implements Subsystem {
         }
     }
 
-    public void startIntake() {
-        desiredState = State.INTAKING;
-    }
-
-    public void stopIntake() {
-        desiredState = State.STOPPED;
-    }
-
-    public void startOuttake() {
-        desiredState = State.OUTTAKING;
-    }
-
-    public void startHolding() {
-        desiredState = State.HOLDING;
-    }
-
-    // temp jam clear
-    public void startJamClearing() {
-        enterJamClearing();
-    }
-
-    @Override
-    public void stop() {
-        desiredState = State.STOPPED;
-        state = State.STOPPED;
-        previousState = State.STOPPED;
-        commandedPower = 0.0;
-        motor.setPower(0.0);
-
-        autoJamClearingEnabled = true;
-
-        jamCandidate = false;
-        jammed = false;
-        jamTimer.reset();
-        jamClearTimer.reset();
-        intakeRunTimer.reset();
-
-        hasItem = false;
-        itemCandidate = false;
-        itemDetectionTimer.reset();
-
-        distanceSensorPollTimer.reset();
-    }
-
-    @Override
+    // telemetry for robot controller
     public List<String> getSimpleTelemetry() {
         return List.of(
                 "Intake State: " + state,
-                "Desired State: " + desiredState,
                 "Has Item: " + hasItem,
                 "Jammed: " + jammed,
+                "Clearing: " + clearing,
                 "Auto Jam Clear: " + autoJamClearingEnabled,
-                "Power: " + String.format(Locale.US, "%.2f", commandedPower)
+                "Power: " + String.format(Locale.US, "%.2f", motor.getPower())
         );
     }
 
-    @Override
+    // just spamming atp
     public List<String> getDetailedTelemetry() {
         return List.of(
                 "Intake State: " + state,
-                "Desired State: " + desiredState,
-                "Commanded Power: " + String.format(Locale.US, "%.2f", commandedPower),
                 "Motor Power: " + String.format(Locale.US, "%.2f", motor.getPower()),
                 "Motor Current (A): " + String.format(Locale.US, "%.2f", motor.getCurrent(CurrentUnit.AMPS)),
                 "Motor Velocity (RPM): " + String.format(Locale.US, "%.2f", getMotorVelocityRPM(motor)),
                 "Auto Jam Clearing Enabled: " + autoJamClearingEnabled,
+                "Clearing: " + clearing,
                 "Has Item: " + hasItem,
                 "Item Candidate: " + itemCandidate,
                 "Last Item Distance (cm): " + String.format(Locale.US, "%.2f", distanceSensor.getDistance(DistanceUnit.CM)),
@@ -287,7 +240,6 @@ public class Intake implements Subsystem {
                 "Jam Candidate: " + jamCandidate,
                 "Jammed: " + jammed,
                 "Jam Timer (ms): " + String.format(Locale.US, "%.1f", jamTimer.milliseconds()),
-                "Jam Clear Timer (ms): " + String.format(Locale.US, "%.1f", jamClearTimer.milliseconds()),
                 "Jam Current Threshold: " + String.format(Locale.US, "%.2f", jamCurrentThreshold),
                 "Jam Velocity Threshold (RPM): " + String.format(Locale.US, "%.2f", jamVelocityThreshold),
                 "Jam Time Threshold (ms): " + String.format(Locale.US, "%.1f", jamTimeThreshold),
@@ -296,7 +248,7 @@ public class Intake implements Subsystem {
         );
     }
 
-    // Manual override: disable automatic jam clearing so driver can take control.
+
     public void setAutoJamClearingEnabled(boolean enabled) {
         this.autoJamClearingEnabled = enabled;
     }
@@ -321,20 +273,16 @@ public class Intake implements Subsystem {
         return state;
     }
 
-    public State getDesiredState() {
-        return desiredState;
-    }
-
     public double getMotorPower() {
         return motor.getPower();
     }
 
-    public double getCommandedPower() {
-        return commandedPower;
-    }
-
     public boolean isJammed() {
         return jammed;
+    }
+
+    public boolean isClearing() {
+        return clearing;
     }
 
     public boolean hasItem() {
