@@ -1,5 +1,8 @@
 package org.firstinspires.ftc.teamcode.subsystems;
 
+import static com.pedropathing.ivy.commands.Commands.conditional;
+import static com.pedropathing.ivy.commands.Commands.infinite;
+import static com.pedropathing.ivy.commands.Commands.instant;
 import static org.firstinspires.ftc.teamcode.Utility.clamp;
 import static org.firstinspires.ftc.teamcode.Utility.getMotorVelocityRPM;
 
@@ -8,6 +11,7 @@ import androidx.annotation.NonNull;
 import com.bylazar.configurables.annotations.Configurable;
 import com.pedropathing.control.PIDFCoefficients;
 import com.pedropathing.control.PIDFController;
+import com.pedropathing.ivy.Command;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -24,10 +28,11 @@ import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotSolution;
 import java.util.List;
 import java.util.Locale;
 
-// not fleshed out, position stuff is being handled rn in flywheel but it will change
-// TODO - refractor this class and all ShotCalculator classes to now use Ivy
+// Ivy command-based flywheel shooter. Unlike Intake (set-and-forget powers), the flywheel runs a
+// closed-loop PIDF that recomputes every loop, so spin() carries a real setExecute body.
+// The ShotCalculator strategy objects stay pure compute — they touch no hardware and need no commands.
 @Configurable
-public class FlywheelShooter implements Subsystem {
+public class FlywheelShooter {
     public enum State {
         STOPPED,
         SPINNING
@@ -69,12 +74,11 @@ public class FlywheelShooter implements Subsystem {
             1.0
     );
 
-    private final LinearOpMode opMode;
-
     public DcMotorEx leftMotor;
     public DcMotorEx rightMotor;
     public ServoImplEx light;
 
+    // current mode label, set by spin()/stop(); used for detection gating + telemetry
     private State state = State.STOPPED;
     private boolean readyToShoot = false;
     private boolean readyCandidate = false;
@@ -108,7 +112,6 @@ public class FlywheelShooter implements Subsystem {
     private final ShotCalculatorManualCloseFar manualCloseFarCalculator;
 
     public FlywheelShooter(LinearOpMode opMode, @NonNull ShotCalculatorMode shotCalculatorMode) {
-        this.opMode = opMode;
         this.defaultShotCalculatorMode = shotCalculatorMode;
         this.shotCalculatorMode = shotCalculatorMode;
 
@@ -117,11 +120,10 @@ public class FlywheelShooter implements Subsystem {
         distanceCalculator = new ShotCalculatorDistance();
         manualCloseFarCalculator = new ShotCalculatorManualCloseFar();
 
-        syncManualPreset();
-    }
+        distanceCalculator.init();       // loads shotTable.csv from /sdcard/FIRST/
+        manualCloseFarCalculator.init(); // resets to IDLE preset
+        syncManualPreset();              // then apply the CLOSE/FAR preset for spinPosition
 
-    @Override
-    public void init() {
         leftMotor = opMode.hardwareMap.get(DcMotorEx.class, "flywheelleft");
         leftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         leftMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
@@ -134,66 +136,86 @@ public class FlywheelShooter implements Subsystem {
         rightMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
         light = opMode.hardwareMap.get(ServoImplEx.class, "light");
-
-        state = State.STOPPED;
-        spinPosition = SpinPosition.CLOSE;
-        shotCalculatorMode = defaultShotCalculatorMode;
-        readyToShoot = false;
-        readyCandidate = false;
-        commandedPower = 0.0;
-        currentRPM = 0.0;
-        targetRPM = 0.0;
-        commandedLedColor = LedColor.OFF;
-        robotPose = null;
-        goalPose = null;
-        currentShotSolution = new ShotSolution(0.0, 0.0, 0.0, false);
-
-        controller.reset();
-
-        manualCloseFarCalculator.reset();
-        distanceCalculator.reset();
-        syncManualPreset();
-
-        leftMotor.setPower(0.0);
-        rightMotor.setPower(0.0);
-        settlingTimer.reset();
         light.setPosition(LedColor.OFF.getValue());
     }
 
-    @Override
-    public void update() {
-        calculateRPM();
-        updateShotSolution();
-        updateReadyToShoot();
+    // driver commands
+    // new schedule interrupts running command
 
-        switch (state) {
-            case STOPPED:
-                commandedPower = 0.0;
-                commandedLedColor = LedColor.OFF;
-                controller.reset();
-                break;
 
-            case SPINNING:
-                if (controller.getTargetPosition() != targetRPM) {
-                    controller.setTargetPosition(targetRPM);
-                }
+    // runs both motorss with a pidf controller to match the given target rpm set by selected shot solution
+    public Command spin() {
+        return Command.build()
+                .setStart(() -> { // only runs on first loop (basically the reset)
+                    state = State.SPINNING; // an iq too high??
+                    controller.reset();
+                    settlingTimer.reset();
+                    readyToShoot = false;
+                    readyCandidate = false;
+                })
+                .setExecute(() -> { // run every loop until interrupted
+                    if (controller.getTargetPosition() != targetRPM) { // when target changes then update ts
+                        controller.setTargetPosition(targetRPM);
+                    }
 
-                controller.updatePosition(currentRPM);
-                controller.updateFeedForwardInput(0.5);
+                    controller.updatePosition(currentRPM);
+                    controller.updateFeedForwardInput(0.5); // TODO - no hardcoding (!!!)
 
-                commandedPower = currentShotSolution.isValid()
-                                 ? clamp(controller.run(), -1.0, 1.0)
-                                 : 0.0;
+                    commandedPower = currentShotSolution.isValid()
+                                     ? clamp(controller.run(), -1.0, 1.0)
+                                     : 0.0;
 
-                commandedLedColor = currentShotSolution.isValid()
-                                    ? (readyToShoot ? LedColor.GREEN : LedColor.RED)
-                                    : LedColor.YELLOW;
-                break;
-        }
+                    // either this or a double tertiary like nahhhhhhhhhh
+                    if (currentShotSolution.isValid()) {
+                        if (readyToShoot) {
+                            commandedLedColor = LedColor.GREEN;
+                        } else {
+                            commandedLedColor = LedColor.RED;
+                        }
+                    } else {
+                        commandedLedColor = LedColor.YELLOW;
+                    }
 
-        leftMotor.setPower(commandedPower);
-        rightMotor.setPower(commandedPower);
-        light.setPosition(commandedLedColor.getValue());
+                    leftMotor.setPower(commandedPower);
+                    rightMotor.setPower(commandedPower);
+                    light.setPosition(commandedLedColor.getValue());
+                })
+                .setDone(() -> false) // HOLD THE LINE SOLDIERS
+                .setEnd(endCondition -> stopAction()) // STAND DOWN AND RETREAT SOLDIER
+                .requiring(leftMotor, rightMotor); // duh
+    }
+
+
+    // the reason stop() doesnt just interrupt spin() is because if spin() is not running then spin.setEnd() cannot be called.
+    public Command stop() {
+        return instant(this::stopAction).requiring(leftMotor, rightMotor);
+    }
+
+
+    private void stopAction() {
+        state = State.STOPPED;
+        controller.reset();
+        commandedPower = 0.0;
+        commandedLedColor = LedColor.OFF;
+        readyToShoot = false;
+        readyCandidate = false;
+        leftMotor.setPower(0.0);
+        rightMotor.setPower(0.0);
+        light.setPosition(LedColor.OFF.getValue());
+    }
+
+
+    public Command toggleSpin() {
+        return conditional(() -> state == State.SPINNING, stop(), spin());
+    }
+
+    // run every single loop
+    public Command periodic() {
+        return infinite(() -> { // runs forever
+            calculateRPM();
+            updateShotSolution();
+            updateReadyToShoot();
+        });
     }
 
     private void updateShotSolution() {
@@ -241,7 +263,7 @@ public class FlywheelShooter implements Subsystem {
                 && Math.abs(controller.getErrorDerivative()) <= settlingDerivativeTolerance;
 
         if (sus) {
-            if (!readyCandidate) {
+            if (!readyCandidate) { // edge detector (dont spam timer reset)
                 readyCandidate = true;
                 settlingTimer.reset();
             }
@@ -257,42 +279,7 @@ public class FlywheelShooter implements Subsystem {
         currentRPM = (getMotorVelocityRPM(leftMotor) + getMotorVelocityRPM(rightMotor)) * 0.5;
     }
 
-    public void startSpinning() {
-        state = State.SPINNING;
-    }
-
-    public void stopSpinning() {
-        state = State.STOPPED;
-    }
-
-    @Override
-    public void stop() {
-        state = State.STOPPED;
-        spinPosition = SpinPosition.CLOSE;
-        shotCalculatorMode = defaultShotCalculatorMode;
-        readyToShoot = false;
-        readyCandidate = false;
-        commandedPower = 0.0;
-        currentRPM = 0.0;
-        targetRPM = 0.0;
-        commandedLedColor = LedColor.OFF;
-        currentShotSolution = new ShotSolution(0.0, 0.0, 0.0, false);
-        robotPose = null;
-        goalPose = null;
-
-        controller.reset();
-
-        manualCloseFarCalculator.reset();
-        distanceCalculator.reset();
-        syncManualPreset();
-
-        leftMotor.setPower(0.0);
-        rightMotor.setPower(0.0);
-        settlingTimer.reset();
-        light.setPosition(LedColor.OFF.getValue());
-    }
-
-    @Override
+    // telemetry for robot controller
     public List<String> getSimpleTelemetry() {
         return List.of(
                 "Flywheel State: " + state,
@@ -303,7 +290,6 @@ public class FlywheelShooter implements Subsystem {
         );
     }
 
-    @Override
     public List<String> getDetailedTelemetry() {
         return List.of(
                 "Flywheel State: " + state,
@@ -324,11 +310,13 @@ public class FlywheelShooter implements Subsystem {
                 "Settling Timer (ms): " + String.format(Locale.US, "%.1f", settlingTimer.milliseconds()),
                 "Settling Tolerance: " + String.format(Locale.US, "%.2f", settlingTolerance),
                 "Settling Derivative Tolerance: " + String.format(Locale.US, "%.2f", settlingDerivativeTolerance),
-                "Settling Time Threshold (ms): " + String.format(Locale.US, "%.1f", settlingTimeThreshold),
+                "Settling Time Threshold (ms): " + String.format(Locale.US, "%.1f", (double) settlingTimeThreshold),
                 "LED Color: " + commandedLedColor
         );
     }
 
+
+    // getters and setterss
     public boolean isReadyToShoot() {
         return readyToShoot;
     }
