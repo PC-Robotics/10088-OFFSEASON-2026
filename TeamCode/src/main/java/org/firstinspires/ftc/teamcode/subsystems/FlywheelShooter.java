@@ -23,14 +23,13 @@ import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculator;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculatorDistance;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculatorManualCloseFar;
+import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotCalculatorProportional;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ShotSolution;
 
 import java.util.List;
 import java.util.Locale;
 
-// Ivy command-based flywheel shooter. Unlike Intake (set-and-forget powers), the flywheel runs a
-// closed-loop PIDF that recomputes every loop, so spin() carries a real setExecute body.
-// The ShotCalculator strategy objects stay pure compute — they touch no hardware and need no commands.
+// shooter class. It can hot-load different shot calculation methods if one fails.
 @Configurable
 public class FlywheelShooter {
     public enum State {
@@ -45,7 +44,8 @@ public class FlywheelShooter {
 
     public enum ShotCalculatorMode {
         MANUAL_CLOSE_FAR,
-        DISTANCE
+        DISTANCE,
+        PROPORTIONAL
     }
 
     public enum LedColor {
@@ -67,6 +67,7 @@ public class FlywheelShooter {
         }
     }
 
+    // TODO - tune
     private static final PIDFCoefficients COEFFICIENTS = new PIDFCoefficients(
             0.0005,
             0.0,
@@ -110,6 +111,7 @@ public class FlywheelShooter {
     // calculators
     private final ShotCalculatorDistance distanceCalculator;
     private final ShotCalculatorManualCloseFar manualCloseFarCalculator;
+    private final ShotCalculatorProportional proportionalCalculator;
 
     public FlywheelShooter(LinearOpMode opMode, @NonNull ShotCalculatorMode shotCalculatorMode) {
         this.defaultShotCalculatorMode = shotCalculatorMode;
@@ -119,10 +121,12 @@ public class FlywheelShooter {
 
         distanceCalculator = new ShotCalculatorDistance();
         manualCloseFarCalculator = new ShotCalculatorManualCloseFar();
+        proportionalCalculator = new ShotCalculatorProportional();
 
-        distanceCalculator.init();       // loads shotTable.csv from /sdcard/FIRST/
-        manualCloseFarCalculator.init(); // resets to IDLE preset
-        syncManualPreset();              // then apply the CLOSE/FAR preset for spinPosition
+        distanceCalculator.init();
+        manualCloseFarCalculator.init();
+        proportionalCalculator.init();
+        syncManualPreset();
 
         leftMotor = opMode.hardwareMap.get(DcMotorEx.class, "flywheelleft");
         leftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
@@ -238,6 +242,8 @@ public class FlywheelShooter {
         switch (shotCalculatorMode) {
             case DISTANCE:
                 return distanceCalculator;
+            case PROPORTIONAL:
+                return proportionalCalculator;
             case MANUAL_CLOSE_FAR:
             default:
                 return manualCloseFarCalculator;
@@ -395,5 +401,9 @@ public class FlywheelShooter {
 
     public ShotCalculatorManualCloseFar getManualCloseFarCalculator() {
         return manualCloseFarCalculator;
+    }
+
+    public ShotCalculatorProportional getProportionalCalculator() {
+        return proportionalCalculator;
     }
 }
